@@ -19,4 +19,5 @@ The microservice will be available on http://localhost:3000 by default.
 
 6. If the title doesn't exist on Project Gutenberg or there is an issue with the request, the microservice will return an appropriate error response.
 
-
+## UML Diagram
+![alt text](./uml.png)
