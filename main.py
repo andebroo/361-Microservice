@@ -2,6 +2,7 @@
 
 import os
 from urllib import request
+from urllib.request import urlopen
 import nltk
 import re
 from flask import Flask, request, jsonify
@@ -53,22 +54,25 @@ def text_from_gutenberg(title, author, url, path='books/texts/', return_tokens=F
     :return: raw text content or tokens depending on the 'return_tokens' parameter
     """
     try:
-        filename = f'{path}{title.lower()}'
+        # Create the path if it doesn't exist
+        os.makedirs(path, exist_ok=True)
 
-        # check if the file is stored locally and is not empty
+        filename = os.path.join(path, f'{title.lower()}.txt')
+
+        # Check if the file is stored locally and is not empty
         if os.path.isfile(filename) and os.stat(filename).st_size != 0:
-            with open(filename, 'r') as f:
+            with open(filename, 'r', encoding='utf-8-sig') as f:
                 raw = f.read()
 
-        # download the text from Project Gutenberg if the file doesn't exist locally
+        # Download the text from Project Gutenberg if the file doesn't exist locally
         # and save it as a local file
         else:
-            response = request.urlopen(url)
-            raw = response.read().decode('utf-8-sig')
-            with open(filename, 'w') as outfile:
-                outfile.write(raw)
+            with urlopen(url) as response:
+                raw = response.read().decode('utf-8-sig')
+                with open(filename, 'w', encoding='utf-8') as outfile:
+                    outfile.write(raw)
 
-        # option to return tokens
+        # Option to return tokens
         if return_tokens:
             tokens = tokenize_text(find_beginning_and_end(raw, title, author))
             return tokens
@@ -81,31 +85,39 @@ def text_from_gutenberg(title, author, url, path='books/texts/', return_tokens=F
 
 def find_beginning_and_end(raw, title, author):
     """
-    Find the main text from the raw data obtained from Project Gutenberg,
-    excluding the Project Gutenberg preamble and postamble
+    Extract the text between the Project Gutenberg preamble and postamble,
+    excluding anything before the preamble
 
     :param raw: raw text content from Project Gutenberg
     :param title: title of the desired text
     :param author: author of the desired text
-    :return: main text content, excluding preamble and postamble
+    :return: main text content between preamble and postamble
     """
     # find the start pattern in the raw text
     start_regex = '\*\*\*\s?START OF TH(IS|E) PROJECT GUTENBERG EBOOK.*\*\*\*'
     draft_start_position = re.search(start_regex, raw)
-    beginning = draft_start_position.end()
-    if re.search(title.lower(), raw[draft_start_position.end():].lower()):
-        title_position = re.search(title.lower(), raw[draft_start_position.end():].lower())
-        beginning += title_position.end()
-        if re.search(author.lower(), raw[draft_start_position.end() + title_position.end():].lower()):
-            author_position = re.search(author.lower(), raw[draft_start_position.end() + title_position.end():].lower())
-            beginning += author_position.end()
 
-    # find the end position of the text
-    end_regex = 'end of th(is|e) project gutenberg ebook'
-    end_position = re.search(end_regex, raw.lower())
-    text = raw[beginning:end_position.start()]
+    if draft_start_position:
+        beginning = draft_start_position.end()
 
-    return text
+        if re.search(title.lower(), raw[draft_start_position.end():].lower()):
+            title_position = re.search(title.lower(), raw[draft_start_position.end():].lower())
+            beginning += title_position.end()
+
+            if re.search(author.lower(), raw[draft_start_position.end() + title_position.end():].lower()):
+                author_position = re.search(author.lower(),
+                                            raw[draft_start_position.end() + title_position.end():].lower())
+                beginning += author_position.end()
+
+                end_regex = 'end of th(is|e) project gutenberg ebook'
+                end_position = re.search(end_regex, raw.lower())
+
+                if end_position:
+                    text = raw[beginning:end_position.start()]
+                    return text
+
+    # if start or end patterns are not found, return the entire text
+    return raw
 
 
 def tokenize_text(token):
